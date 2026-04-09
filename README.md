@@ -1,0 +1,1 @@
+A receiver that processes packets from the Mobile Arm Vision Controller Sender [MAVC-Sender](https://github.com/aidan073/MAVC-Sender), and provides a convenient interface to connect the commands to your own control loop. See [MAVC-Example](https://github.com/aidan073/MAVC-Example) for example usage of this package.

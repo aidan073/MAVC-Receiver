@@ -1,0 +1,24 @@
+[project]
+name = "mavc_receiver"
+version = "0.0.1"
+authors = [
+  { name="Aidan Bell", email="aidanbell073@gmail.com" },
+]
+description = "A receiver that processes packets from the Mobile Arm Vision Controller Sender (MAVC-Sender), and provides a convenient interface to connect the commands to your own control loop."
+readme = "README.md"
+requires-python = ">=3.11"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Operating System :: OS Independent",
+]
+license = "MIT"
+license-files = ["LICENSE"]
+
+[project.urls]
+MAVC-Sender = "https://github.com/aidan073/MAVC-Sender"
+MAVC-Example = "https://github.com/aidan073/MAVC-Example"
+Issues = "https://github.com/aidan073/MAVC-Receiver/issues"
+
+[build-system]
+requires = ["setuptools", "wheel"]
+build-backend = "setuptools.build_meta"
