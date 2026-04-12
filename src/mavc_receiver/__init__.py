@@ -1,5 +1,5 @@
 from .receiver import Receiver
-from .message.command import Command
-from .message.command_parser import CommandParser
+from .wire.command import Command
+from .wire.command_parser import CommandParser
 
 __all__ = ["Command", "Receiver", "CommandParser"]

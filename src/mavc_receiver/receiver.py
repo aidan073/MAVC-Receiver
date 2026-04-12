@@ -1,4 +1,4 @@
-from .message.command import Command
+from .wire.command import Command
 
 import socket
 import threading
