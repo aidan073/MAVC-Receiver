@@ -1,0 +1,21 @@
+# Root directory for CA material (relative to process cwd unless absolute).
+ca_root: "ca"
+certs_subdir: "certs"
+private_subdir: "private"
+newcerts_subdir: "newcerts"
+
+ca_key_file: "ca.key.pem"
+ca_cert_file: "ca.cert.pem"
+server_key_file: "server.key.pem"
+server_cert_file: "server.cert.pem"
+server_csr_file: "server.csr.pem"
+index_file: "index.txt"
+serial_file: "serial"
+
+# Hostname or IP that clients use when connecting (server cert SAN).
+server_san_host: "127.0.0.1"
+server_san_port: 5073
+
+ca_validity_days: 3650
+server_cert_validity_days: 825
+client_cert_validity_days: 365

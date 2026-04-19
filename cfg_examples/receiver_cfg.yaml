@@ -1,0 +1,5 @@
+message_size: 128
+buffer_size: 1024
+bind_host: "0.0.0.0"
+bind_port: 5073
+max_connections: 1

@@ -1,10 +1,11 @@
 from .wire.command import Command
+from .cfg_parser import ReceiverCfg, load_cfg
 
 import socket
 import threading
-from queue import Queue
 from dataclasses import dataclass
-
+from pathlib import Path
+from queue import Queue
 from typing import Callable, Dict, List
 
 
@@ -20,10 +21,20 @@ class Receiver:
 
     _started = False
 
-    def __init__(self, cfg: ReceiverCfg = None):
-        if not cfg:
-            cfg = ReceiverCfg()
-        pass
+    def __init__(
+        self,
+        cfg: ReceiverCfg | Path | str | None = None,
+    ) -> None:
+        if cfg is None:
+            self._cfg = ReceiverCfg()
+        elif isinstance(cfg, ReceiverCfg):
+            self._cfg = cfg
+        elif isinstance(cfg, (str, Path)):
+            self._cfg = load_cfg(Path(cfg))
+        else:
+            raise TypeError(
+                "[MAVC-Receiver] Cfg must be None, a ReceiverCfg, or a path to a .yaml file"
+            )
 
     def run(self) -> None:
         try:
@@ -110,15 +121,6 @@ class Receiver:
     def _rec_loop(self, client: socket.socket) -> None:
         while True:
             data = client.recv(self._cfg.buffer_size)
-
-
-@dataclass
-class ReceiverCfg:
-    message_size: int = 128  # TODO: Match this to default message size
-    buffer_size: int = 1024
-    bind_host: str = "0.0.0.0"
-    bind_port: int = 5073
-    max_connections: int = 1
 
 
 @dataclass
