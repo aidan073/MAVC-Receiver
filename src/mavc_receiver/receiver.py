@@ -103,7 +103,7 @@ class Receiver:
         while True:
             client, _ = self._server.accept()
             self._client_sockets.append(client)
-            client_conn_thread = threading.Thread(target=self._rec_loop, args=(client))
+            client_conn_thread = threading.Thread(target=self._rec_loop, args=(client,))
             self._client_threads.append(client_conn_thread)
             client_conn_thread.start()
 

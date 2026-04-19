@@ -1,6 +1,9 @@
 [project]
 name = "mavc_receiver"
 version = "0.0.1"
+dependencies = [
+  "cryptography >= 46.0.7"
+]
 authors = [
   { name="Aidan Bell", email="aidanbell073@gmail.com" },
 ]
