@@ -1,21 +1,45 @@
-# Root directory for CA material (relative to process cwd unless absolute).
+# =============================================================================
+# Local CA layout — all paths are relative to the process working directory
+# unless you use an absolute path (e.g. ca_root: "/var/lib/mavc-ca").
+# =============================================================================
+
+# Top-level directory that holds the CA (index, serial, subdirs for certs/keys).
 ca_root: "ca"
+# Subdirectory under ca_root for issued PEM certificates (CA cert, server cert, CRL).
 certs_subdir: "certs"
+# Subdirectory under ca_root for private keys (CA key, server key); keep restricted.
 private_subdir: "private"
+# Subdirectory under ca_root for per-serial copies of issued certs (OpenSSL-style).
 newcerts_subdir: "newcerts"
 
+# Filename for the CA RSA private key (stored under <ca_root>/<private_subdir>/).
 ca_key_file: "ca.key.pem"
+# Filename for the CA certificate PEM (stored under <ca_root>/<certs_subdir>/).
 ca_cert_file: "ca.cert.pem"
+# Filename for the TLS server RSA private key (under private_subdir).
 server_key_file: "server.key.pem"
+# Filename for the TLS server certificate PEM (under certs_subdir).
 server_cert_file: "server.cert.pem"
+# Reserved filename for a server CSR if you generate one manually (under ca_root).
 server_csr_file: "server.csr.pem"
-index_file: "index.txt"
-serial_file: "serial"
 
-# Hostname or IP that clients use when connecting (server cert SAN).
+# OpenSSL-style certificate database (issued certs appended as tab-separated rows).
+index_file: "index.txt"
+# Hex serial file: next certificate serial to use; incremented after each issuance.
+serial_file: "serial"
+# PEM certificate revocation list written under <ca_root>/<certs_subdir>/.
+crl_file: "ca.crl.pem"
+# CRL nextUpdate is last_update plus this many hours (also controls refresh window).
+crl_next_update_hours: 24
+
+# Hostname or IP placed in the server cert SAN (match what clients use to connect).
 server_san_host: "127.0.0.1"
+# TCP port included in the server cert as a uniformResourceIdentifier SAN entry.
 server_san_port: 5073
 
+# Validity window in days for the self-signed CA certificate.
 ca_validity_days: 3650
+# Validity window in days for the TLS server certificate issued by this CA.
 server_cert_validity_days: 825
+# Default validity in days for client certificates issued via sign_client_csr().
 client_cert_validity_days: 365

@@ -17,6 +17,7 @@ class LocalCaPaths:
     server_csr_path: Path
     index_path: Path
     serial_path: Path
+    crl_path: Path
 
 
 @dataclass
@@ -32,6 +33,8 @@ class LocalCaCfg:
     server_csr_file: str = "server.csr.pem"
     index_file: str = "index.txt"
     serial_file: str = "serial"
+    crl_file: str = "ca.crl.pem"
+    crl_next_update_hours: int = 24
     server_san_host: str = "127.0.0.1"
     server_san_port: int = 5073
     ca_validity_days: int = 3650
@@ -56,6 +59,7 @@ def resolve_local_ca_paths(cfg: LocalCaCfg) -> LocalCaPaths:
         server_csr_path=ca / cfg.server_csr_file,
         index_path=ca / cfg.index_file,
         serial_path=ca / cfg.serial_file,
+        crl_path=certs / cfg.crl_file,
     )
 
 
@@ -85,6 +89,8 @@ def load_local_ca_cfg(path: Path) -> LocalCaCfg:
         server_csr_file=str(complete["server_csr_file"]),
         index_file=str(complete["index_file"]),
         serial_file=str(complete["serial_file"]),
+        crl_file=str(complete["crl_file"]),
+        crl_next_update_hours=int(complete["crl_next_update_hours"]),
         server_san_host=str(complete["server_san_host"]),
         server_san_port=int(complete["server_san_port"]),
         ca_validity_days=int(complete["ca_validity_days"]),

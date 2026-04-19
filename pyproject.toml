@@ -6,6 +6,9 @@ dependencies = [
   "PyYAML >= 6.0",
 ]
 
+[project.scripts]
+mavc-local-ca = "mavc_receiver.security.local_ca:main"
+
 [tool.setuptools.packages.find]
 where = ["src"]
 
