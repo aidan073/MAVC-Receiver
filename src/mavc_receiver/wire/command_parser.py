@@ -4,6 +4,8 @@ from .command import Command
 
 import struct
 
+_EXPECTED_COMMAND_MAGIC = 0x073CD
+
 
 class CommandParser(IParser):
     """
@@ -22,12 +24,8 @@ class CommandParser(IParser):
         """
         self.sender_endian = sender_endian
         self.receiver_endian = receiver_endian
-        self._decoder_struct = struct.Struct(
-            f"{self.sender_endian.value}HBIdfffffffffB"
-        )
-        self._encoder_struct = struct.Struct(
-            f"{self.receiver_endian.value}HBIdffffffff"
-        )
+        self._decoder_struct = struct.Struct(f"{self.sender_endian.value}HBIdfffffffB")
+        self._encoder_struct = struct.Struct(f"{self.receiver_endian.value}HBIdfffffff")
 
     @staticmethod
     def _compute_checksum(data: bytes) -> int:
@@ -87,6 +85,11 @@ class CommandParser(IParser):
             grip_amount,
             checksum,
         ) = self._decoder_struct.unpack(data)
+
+        if magic != _EXPECTED_COMMAND_MAGIC:
+            raise ValueError(
+                f"Magic mismatch: expected 0x{_EXPECTED_COMMAND_MAGIC:X}, got 0x{magic:X}."
+            )
 
         return Command(
             magic=magic,

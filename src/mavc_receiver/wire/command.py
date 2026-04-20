@@ -11,7 +11,7 @@ class Command:
     Fields
     ------
     magic : int (UInt16)
-        Fixed header identifier (e.g. 0xA55A) used by the receiver to
+        Fixed header identifier (0x073CD) used by the receiver to
         confirm that this is a valid, recognized packet and not stray bytes.
 
     version : int (UInt8)
