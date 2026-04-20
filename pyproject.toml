@@ -7,7 +7,7 @@ dependencies = [
 ]
 
 [project.scripts]
-mavc-local-ca = "mavc_receiver.security.local_ca:main"
+mavc-local-ca = "mavc_receiver.security.setup:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

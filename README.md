@@ -12,12 +12,12 @@ By default, MAVC utilizes an unencrypted TCP connection and does not validate th
 ```bash
 mavc-local-ca cfg_examples/local_ca_cfg.yaml
 # equivalent:
-python -m mavc_receiver.security.local_ca cfg_examples/local_ca_cfg.yaml
+python -m mavc_receiver.security.setup cfg_examples/local_ca_cfg.yaml
 ```
 
-This generates CA and server keys if needed, issues both certificates, records issuance in `index.txt` and `newcerts/`, and writes the CRL (default `ca/certs/ca.crl.pem`).
+The `mavc-local-ca` script invokes [`mavc_receiver.security.setup:main`](src/mavc_receiver/security/setup.py). This generates CA and server keys if needed, issues both certificates, records issuance in `index.txt` and `newcerts/`, and writes the CRL (default `ca/certs/ca.crl.pem`).
 
-Run `mavc-local-ca --help` (or `python -m mavc_receiver.security.local_ca --help`) for subcommands (`crl`, `revoke`).
+Run `mavc-local-ca --help` (or `python -m mavc_receiver.security.setup --help`) for subcommands (`crl`, `revoke`).
 
 ### Todo: install the CA certificate on clients
 
@@ -28,7 +28,7 @@ Run `mavc-local-ca --help` (or `python -m mavc_receiver.security.local_ca --help
 ### Todo: obtain a signed client certificate
 
 - [ ] On the client, create a keypair and a CSR for TLS client authentication (your environment’s method or OpenSSL).
-- [ ] On the CA machine, sign the CSR with `sign_client_csr()` in [`mavc_receiver.security.local_ca`](src/mavc_receiver/security/local_ca.py) (load the CA key and cert and pass your `LocalCaCfg`). There is no CLI for client issuance yet.
+- [ ] On the CA machine, sign the CSR with `sign_client_csr()` from [`mavc_receiver.security.core.client`](src/mavc_receiver/security/core/client.py). Load configuration with `load_local_ca_cfg()` from [`mavc_receiver.security.cfg_parser`](src/mavc_receiver/security/cfg_parser.py) (YAML path); that returns the process-wide `LocalCaCfg` singleton and its composed `paths`. Load the CA private key and certificate from disk, then pass them into `sign_client_csr()` together with the config. There is no CLI for client issuance yet.
 - [ ] Install the issued client certificate and private key on the device. The serial will appear in `index.txt` for revocation.
 
 ### Revocation
@@ -40,7 +40,7 @@ The server should validate **client** certificates against the CRL during TLS. T
 | `mavc-local-ca <config.yaml> revoke <serial>` | Revoke by serial (decimal or hex, e.g. `4096` or `0x1000`). Updates `index.txt` and rewrites the CRL. Serial must exist for a cert issued by this CA. |
 | `mavc-local-ca <config.yaml> crl` | Rebuild the CRL from `index.txt` (e.g. refresh `nextUpdate`). |
 
-You can substitute `python -m mavc_receiver.security.local_ca` for `mavc-local-ca`. The same operations are available from Python in [`local_ca.py`](src/mavc_receiver/security/local_ca.py) (`setup_ca_system`, `write_crl`, `revoke_certificate`).
+You can substitute `python -m mavc_receiver.security.setup` for `mavc-local-ca`. From Python, the matching pieces live in [`setup.py`](src/mavc_receiver/security/setup.py) (`setup_ca_system`, `main`), [`core/crl.py`](src/mavc_receiver/security/core/crl.py) (`write_crl`, `revoke_certificate`), and [`cfg_parser.py`](src/mavc_receiver/security/cfg_parser.py) (`load_local_ca_cfg`, `LocalCaCfg`, `LocalCaPaths`). The config and resolved paths are singletons for the process after the first successful `load_local_ca_cfg` call.
 
 **Client key or cert compromised:** revoke that serial, reload or pick up the new CRL in the receiver, issue a new client cert (new keypair) for the device.
 
