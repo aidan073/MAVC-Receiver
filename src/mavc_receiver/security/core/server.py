@@ -40,26 +40,65 @@ def _server_san_for_cfg(cfg: LocalCaCfg) -> x509.SubjectAlternativeName:
     return x509.SubjectAlternativeName(general_names)
 
 
-def load_or_create_server_key(cfg: LocalCaCfg) -> rsa.RSAPrivateKey:
+def load_server_key(cfg: LocalCaCfg) -> rsa.RSAPrivateKey | None:
     """
-    Load the TLS server private key from disk, or generate a 2048-bit RSA key and save it.
+    Load the TLS server private key from disk if present.
 
     Args:
         cfg (LocalCaCfg): Local CA configuration.
 
     Returns:
-        The server ``RSAPrivateKey``.
+        The server ``RSAPrivateKey``, or ``None`` if the key file is missing.
+    """
+    p = cfg.paths
+    if not p.server_key_path.is_file():
+        return None
+    key = serialization.load_pem_private_key(
+        p.server_key_path.read_bytes(),
+        password=None,
+    )
+    if not isinstance(key, rsa.RSAPrivateKey):
+        raise TypeError("[MAVC-Receiver] server key must be RSA")
+    return key
+
+
+def create_server_key(cfg: LocalCaCfg) -> rsa.RSAPrivateKey:
+    """
+    Generate a 2048-bit RSA server key and write it to the configured path.
+
+    Args:
+        cfg (LocalCaCfg): Local CA configuration.
+
+    Returns:
+        The new server ``RSAPrivateKey``.
+
+    Raises:
+        FileExistsError: If a server key file already exists.
     """
     p = cfg.paths
     if p.server_key_path.exists():
-        return serialization.load_pem_private_key(
-            p.server_key_path.read_bytes(),
-            password=None,
+        raise FileExistsError(
+            f"[MAVC-Receiver] Refusing to overwrite existing server key: {p.server_key_path}"
         )
-
     key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
     save_private_key(key, p.server_key_path)
     return key
+
+
+def load_server_cert(cfg: LocalCaCfg) -> x509.Certificate | None:
+    """
+    Load the TLS server certificate PEM from disk if present.
+
+    Args:
+        cfg (LocalCaCfg): Local CA configuration.
+
+    Returns:
+        The server ``Certificate``, or ``None`` if the file is missing.
+    """
+    p = cfg.paths
+    if not p.server_cert_path.is_file():
+        return None
+    return x509.load_pem_x509_certificate(p.server_cert_path.read_bytes())
 
 
 def create_server_cert(
@@ -69,7 +108,7 @@ def create_server_cert(
     local_ca_cfg: LocalCaCfg,
 ) -> x509.Certificate:
     """
-    Load or issue the TLS server certificate (SAN, serverAuth), signed by the CA.
+    Issue a new TLS server certificate (SAN, serverAuth), signed by the CA.
 
     Args:
         server_key (rsa.RSAPrivateKey): Server key paired with the certificate.
@@ -79,10 +118,15 @@ def create_server_cert(
 
     Returns:
         The server ``Certificate`` (written to the configured server cert path).
+
+    Raises:
+        FileExistsError: If a server certificate file already exists.
     """
     p = local_ca_cfg.paths
-    if p.server_cert_path.exists():
-        return x509.load_pem_x509_certificate(p.server_cert_path.read_bytes())
+    if load_server_cert(local_ca_cfg) is not None:
+        raise FileExistsError(
+            f"[MAVC-Receiver] Refusing to overwrite existing server certificate: {p.server_cert_path}"
+        )
 
     subject = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "robot-server")])
 

@@ -208,31 +208,70 @@ def save_private_key(key: rsa.RSAPrivateKey, path: Path):
     os.chmod(path, 0o600)
 
 
-def load_or_create_ca_key(cfg: LocalCaCfg) -> rsa.RSAPrivateKey:
+def load_ca_key(cfg: LocalCaCfg) -> rsa.RSAPrivateKey | None:
     """
-    Load the CA private key from disk, or generate a 4096-bit RSA key and save it.
+    Load the CA private key from disk if present.
 
     Args:
         cfg (LocalCaCfg): Local CA configuration.
 
     Returns:
-        The CA ``RSAPrivateKey``.
+        The CA ``RSAPrivateKey``, or ``None`` if the key file is missing.
+    """
+    p = cfg.paths
+    if not p.ca_key_path.is_file():
+        return None
+    key = serialization.load_pem_private_key(
+        p.ca_key_path.read_bytes(),
+        password=None,
+    )
+    if not isinstance(key, rsa.RSAPrivateKey):
+        raise TypeError("[MAVC-Receiver] CA key must be RSA")
+    return key
+
+
+def create_ca_key(cfg: LocalCaCfg) -> rsa.RSAPrivateKey:
+    """
+    Generate a 4096-bit RSA CA key and write it to the configured path.
+
+    Args:
+        cfg (LocalCaCfg): Local CA configuration.
+
+    Returns:
+        The new CA ``RSAPrivateKey``.
+
+    Raises:
+        FileExistsError: If a CA key file already exists.
     """
     p = cfg.paths
     if p.ca_key_path.exists():
-        return serialization.load_pem_private_key(
-            p.ca_key_path.read_bytes(),
-            password=None,
+        raise FileExistsError(
+            f"[MAVC-Receiver] Refusing to overwrite existing CA key: {p.ca_key_path}"
         )
-
     key = rsa.generate_private_key(public_exponent=65537, key_size=4096)
     save_private_key(key, p.ca_key_path)
     return key
 
 
+def load_ca_cert(cfg: LocalCaCfg) -> x509.Certificate | None:
+    """
+    Load the CA certificate PEM from disk if present.
+
+    Args:
+        cfg (LocalCaCfg): Local CA configuration.
+
+    Returns:
+        The CA ``Certificate``, or ``None`` if the file is missing.
+    """
+    p = cfg.paths
+    if not p.ca_cert_path.is_file():
+        return None
+    return x509.load_pem_x509_certificate(p.ca_cert_path.read_bytes())
+
+
 def create_ca_cert(ca_key: rsa.RSAPrivateKey, cfg: LocalCaCfg) -> x509.Certificate:
     """
-    Load or create the self-signed CA certificate, updating the index and ``newcerts``.
+    Issue a new self-signed CA certificate, updating the index and ``newcerts``.
 
     Args:
         ca_key (rsa.RSAPrivateKey): CA signing key.
@@ -240,10 +279,15 @@ def create_ca_cert(ca_key: rsa.RSAPrivateKey, cfg: LocalCaCfg) -> x509.Certifica
 
     Returns:
         The CA ``Certificate`` (PEM on disk at the configured path).
+
+    Raises:
+        FileExistsError: If a CA certificate file already exists.
     """
     p = cfg.paths
-    if p.ca_cert_path.exists():
-        return x509.load_pem_x509_certificate(p.ca_cert_path.read_bytes())
+    if load_ca_cert(cfg) is not None:
+        raise FileExistsError(
+            f"[MAVC-Receiver] Refusing to overwrite existing CA certificate: {p.ca_cert_path}"
+        )
 
     subject = issuer = x509.Name(
         [x509.NameAttribute(NameOID.COMMON_NAME, "Robot-Local-CA")]
