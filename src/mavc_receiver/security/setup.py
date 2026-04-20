@@ -1,11 +1,8 @@
+from .utils import ensure_dirs
 from .cfg_parser import LocalCaCfg, _coerce_cfg
 from .core.crl import revoke_certificate, write_crl
+from .core.ca import create_ca_cert, load_or_create_ca_key
 from .core.server import create_server_cert, load_or_create_server_key
-from .core.ca import (
-    create_ca_cert,
-    ensure_dirs,
-    load_or_create_ca_key,
-)
 
 from pathlib import Path
 
@@ -18,20 +15,23 @@ def setup_ca_system(local_ca_cfg: Path | str | LocalCaCfg) -> None:
     Args:
         local_ca_cfg (Path | str | LocalCaCfg): Path to YAML, or loaded ``LocalCaCfg``.
     """
+    # Initial setup
     cfg = _coerce_cfg(local_ca_cfg)
-
     ensure_dirs(cfg)
     paths = cfg.paths
 
+    # Create CA cert
     ca_key = load_or_create_ca_key(cfg)
     ca_cert = create_ca_cert(ca_key, cfg)
 
+    # Create server cert
     server_key = load_or_create_server_key(cfg)
     create_server_cert(server_key, ca_key, ca_cert, local_ca_cfg=cfg)
 
+    # Create crl
     crl_path = write_crl(cfg)
 
-    print("CA and server certificates ready.")
+    print("[MAVC-Receiver] CA cert, server cert, and crl ready.")
     print(f"CA cert: {paths.ca_cert_path}")
     print(f"Server cert: {paths.server_cert_path}")
     print(f"CRL: {crl_path}")

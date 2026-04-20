@@ -191,24 +191,6 @@ def _parse_index_rows(text: str) -> list[CaIndexEntry]:
     return rows
 
 
-# ===== Helpers =====
-def ensure_dirs(cfg: LocalCaCfg) -> None:
-    """
-    Create CA directories, touch ``index.txt``, and initialize ``serial`` if missing.
-
-    Args:
-        cfg (LocalCaCfg): Local CA configuration.
-    """
-    p = cfg.paths
-    p.certs_dir.mkdir(parents=True, exist_ok=True)
-    p.private_dir.mkdir(parents=True, exist_ok=True)
-    p.newcerts_dir.mkdir(parents=True, exist_ok=True)
-
-    p.index_path.touch(exist_ok=True)
-    if not p.serial_path.exists():
-        p.serial_path.write_text("1000\n")
-
-
 def save_private_key(key: rsa.RSAPrivateKey, path: Path):
     """
     Write an RSA private key to PEM (traditional OpenSSL, no encryption) with ``0600`` perms.

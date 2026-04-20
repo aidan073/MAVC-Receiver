@@ -1,10 +1,10 @@
+from ..utils import ensure_dirs
 from ...enum import CertStatus
 from ..cfg_parser import LocalCaCfg, _coerce_cfg
 from .ca import (
     CaIndexEntry,
     DateFormatter,
     _CA_FILE_LOCK,
-    ensure_dirs,
     _parse_index_line,
     _parse_index_rows,
 )

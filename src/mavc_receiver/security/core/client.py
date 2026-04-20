@@ -1,3 +1,4 @@
+from ..utils import ensure_dirs
 from ...enum import CertStatus
 from ..cfg_parser import LocalCaCfg
 from .ca import (
@@ -6,7 +7,6 @@ from .ca import (
     _name_to_openssl_dn,
     _next_serial_number,
     _write_newcert_copy,
-    ensure_dirs,
 )
 
 from cryptography import x509

@@ -175,7 +175,7 @@ def _coerce_cfg(local_ca_cfg: Path | str | LocalCaCfg) -> LocalCaCfg:
         return load_local_ca_cfg(Path(local_ca_cfg))
     if not isinstance(local_ca_cfg, LocalCaCfg):
         raise ValueError(
-            "[MAVC-Receiver] Expected a path to a local CA YAML file or LocalCaCfg, "
+            "[MAVC-Receiver] Expected a path to a local CA config YAML file or LocalCaCfg, "
             f"not {type(local_ca_cfg)}."
         )
     return local_ca_cfg
