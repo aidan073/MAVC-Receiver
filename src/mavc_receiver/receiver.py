@@ -7,7 +7,19 @@ import ssl
 import threading
 from pathlib import Path
 from queue import Queue, Empty
+from colorama import Fore, Style, init as colorama_init
+
 from typing import Callable, List, Optional, Tuple
+
+colorama_init()
+
+
+def _log_warn(msg: str) -> None:
+    print(f"{Fore.YELLOW}{msg}{Style.RESET_ALL}")
+
+
+def _log_error(msg: str) -> None:
+    print(f"{Fore.RED}{msg}{Style.RESET_ALL}")
 
 
 class Receiver:
@@ -42,11 +54,17 @@ class Receiver:
                 self._cfg = load_cfg(Path(cfg))
                 self.is_safe = True
             except Exception as e:
-                print("[MAVC-Receiver] Error loading cfg, using default settings and entering unsafe mode.")
+                _log_error(
+                    f"[MAVC-Receiver] Failed to load config from {cfg!r}: {e}. "
+                    "Using default settings; this instance is unsafe until you fix the file or pass a ReceiverCfg."
+                )
                 self._cfg = ReceiverCfg()
                 self.is_safe = False
         else:
-            print("[MAVC-Receiver] Cfg must be None, a ReceiverCfg, or a path to a .yaml file. Using default settings and entering unsafe mode.")
+            _log_error(
+                "[MAVC-Receiver] Cfg must be None, a ReceiverCfg, or a path to a .yaml file. "
+                "Using default settings; this instance is unsafe."
+            )
             self.is_safe = False
 
         self._queue: Queue[Command] = Queue()
@@ -60,7 +78,7 @@ class Receiver:
         self._mtls_ctx = None
         self._started = False
 
-    def run(self, ignore_safety:bool=False) -> None:
+    def run(self, ignore_safety: bool = False) -> None:
         """
         Bind a TCP listen socket and start the accept loop on a background thread.
 
@@ -69,13 +87,19 @@ class Receiver:
         """
         if not self.is_safe:
             if not ignore_safety:
-                print("[MAVC-Receiver] Server launch cancelled: A configuration has caused the Receiver instance to be unsafe, and ``ignore_safety`` is False, cancelling server launch.")
-            else:
-                print("[MAVC-Receiver] A configuration has caused the Receiver instance to be unsafe, but ``ignore_safety`` is True, so server launch will continue.")
+                _log_error(
+                    "[MAVC-Receiver] Server launch cancelled: Receiver is in an unsafe state "
+                    "(config load failed or invalid cfg type) and ignore_safety is False."
+                )
+                return
+            _log_warn(
+                "[MAVC-Receiver] Receiver is unsafe (config load failed or invalid cfg type), "
+                "but ignore_safety is True; starting the server anyway."
+            )
 
         if self._started:
-            print(
-                "[MAVC-Receiver] Receiver server has already been started, ensure it has been stopped before calling Receiver.run() again."
+            _log_warn(
+                "[MAVC-Receiver] Server is already running; stop it before calling run() again."
             )
             return
         try:
@@ -104,7 +128,7 @@ class Receiver:
             self._server_thread.start()
 
         except Exception as e:
-            print(f"[MAVC-Receiver] Server had an error while running: {e}")
+            _log_error(f"[MAVC-Receiver] Server failed to start: {e}")
             self._started = False
             self._server_thread = None
             self._mtls_ctx = None
@@ -167,7 +191,7 @@ class Receiver:
             self._client_sockets.clear()
 
         except Exception as e:
-            print(
+            _log_error(
                 f"[MAVC-Receiver] Error during stop (shutdown may be incomplete): {e}"
             )
             return False
@@ -193,7 +217,7 @@ class Receiver:
             try:
                 callback(self, command)
             except Exception as e:
-                print(f"[MAVC-Receiver] Error in spin callback: {e}")
+                _log_error(f"[MAVC-Receiver] Error in spin callback: {e}")
         return True
 
     def poll(self) -> Command | None:
@@ -232,7 +256,7 @@ class Receiver:
             else:
                 self._instant_callbacks.append((callback_fn, digest))
         except Exception as e:
-            print(f"[MAVC-Receiver] Error registering callback: {e}")
+            _log_error(f"[MAVC-Receiver] Error registering callback: {e}")
             return False
         return True
 
@@ -258,7 +282,7 @@ class Receiver:
                         "The provided callback does not match any registered callback."
                     )
         except Exception as e:
-            print(f"[MAVC-Receiver] Error unregistering callback: {e}")
+            _log_error(f"[MAVC-Receiver] Error unregistering callback: {e}")
             return False
         return True
 
@@ -282,7 +306,9 @@ class Receiver:
                 try:
                     client = self._mtls_ctx.wrap_socket(client, server_side=True)
                 except ssl.SSLError as e:
-                    print(f"[MAVC-Receiver] mTLS handshake failed, closing client: {e}")
+                    _log_error(
+                        f"[MAVC-Receiver] mTLS handshake failed, closing client: {e}"
+                    )
                     try:
                         client.close()
                     except OSError:
@@ -324,18 +350,22 @@ class Receiver:
                             try:
                                 instant_cb(self, cmd)
                             except Exception as e:
-                                print(f"[MAVC-Receiver] Error in instant callback: {e}")
+                                _log_error(
+                                    f"[MAVC-Receiver] Error in instant callback: {e}"
+                                )
                             if digest:
                                 skip_queue = True
                         if not skip_queue:
                             self._queue.put(cmd)
                     except ValueError as e:
                         del buf[0]
-                        print(f"[MAVC-Receiver] Error decoding a chunk, retrying: {e}")
+                        _log_warn(
+                            f"[MAVC-Receiver] Decode error on chunk, dropped 1 byte and resyncing: {e}"
+                        )
                         continue
                     del buf[:frame_size]
         except Exception as e:
-            print(f"[MAVC-Receiver] Error while receiving byte stream: {e}")
+            _log_error(f"[MAVC-Receiver] Error while receiving byte stream: {e}")
             pass
         finally:
             try:
