@@ -1,8 +1,9 @@
 from .wire.command import Command
-from .cfg_parser import ReceiverCfg, load_cfg
+from .cfg_parser import ReceiverCfg, load_cfg, validate_receiver_mtls_cfg
 from .wire.command_parser import CommandParser
 
 import socket
+import ssl
 import threading
 from pathlib import Path
 from queue import Queue, Empty
@@ -17,6 +18,7 @@ class Receiver:
     _parser: Callable
     _server: Optional[socket.socket]
     _server_thread: Optional[threading.Thread]
+    _mtls_ctx: Optional[ssl.SSLContext]
     _client_sockets: List[socket.socket]
     _client_threads: List[threading.Thread]
     _spin_callbacks: List[Callable]
@@ -28,16 +30,24 @@ class Receiver:
         self,
         cfg: ReceiverCfg | Path | str | None = None,
     ) -> None:
+        self.is_safe = False
         if cfg is None:
             self._cfg = ReceiverCfg()
+            self.is_safe = True
         elif isinstance(cfg, ReceiverCfg):
             self._cfg = cfg
+            self.is_safe = True
         elif isinstance(cfg, (str, Path)):
-            self._cfg = load_cfg(Path(cfg))
+            try:
+                self._cfg = load_cfg(Path(cfg))
+                self.is_safe = True
+            except Exception as e:
+                print("[MAVC-Receiver] Error loading cfg, using default settings and entering unsafe mode.")
+                self._cfg = ReceiverCfg()
+                self.is_safe = False
         else:
-            raise TypeError(
-                "[MAVC-Receiver] Cfg must be None, a ReceiverCfg, or a path to a .yaml file"
-            )
+            print("[MAVC-Receiver] Cfg must be None, a ReceiverCfg, or a path to a .yaml file. Using default settings and entering unsafe mode.")
+            self.is_safe = False
 
         self._queue: Queue[Command] = Queue()
         self._client_sockets: List[socket.socket] = []
@@ -47,18 +57,41 @@ class Receiver:
         self._command_parser = CommandParser()
         self._server = None
         self._server_thread = None
+        self._mtls_ctx = None
         self._started = False
 
-    def run(self) -> None:
+    def run(self, ignore_safety:bool=False) -> None:
         """
         Bind a TCP listen socket and start the accept loop on a background thread.
+
+        Args:
+            ignore_safety (bool): If set to True, a configuration issue during intialization of Receiver won't block this method from running. Defaults to False.
         """
+        if not self.is_safe:
+            if not ignore_safety:
+                print("[MAVC-Receiver] Server launch cancelled: A configuration has caused the Receiver instance to be unsafe, and ``ignore_safety`` is False, cancelling server launch.")
+            else:
+                print("[MAVC-Receiver] A configuration has caused the Receiver instance to be unsafe, but ``ignore_safety`` is True, so server launch will continue.")
+
         if self._started:
             print(
                 "[MAVC-Receiver] Receiver server has already been started, ensure it has been stopped before calling Receiver.run() again."
             )
             return
         try:
+            validate_receiver_mtls_cfg(self._cfg)
+            if self._cfg.verify_client_identity:
+                ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+                ctx.load_cert_chain(
+                    certfile=self._cfg.server_cert_path,
+                    keyfile=self._cfg.server_key_path,
+                )
+                ctx.verify_mode = ssl.CERT_REQUIRED
+                ctx.load_verify_locations(cafile=self._cfg.ca_cert_path)
+                self._mtls_ctx = ctx
+            else:
+                self._mtls_ctx = None
+
             self._server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             self._server.bind((self._cfg.bind_host, self._cfg.bind_port))
             self._server.listen(self._cfg.max_connections)
@@ -74,6 +107,7 @@ class Receiver:
             print(f"[MAVC-Receiver] Server had an error while running: {e}")
             self._started = False
             self._server_thread = None
+            self._mtls_ctx = None
             if self._server is not None:
                 try:
                     self._server.close()
@@ -122,6 +156,8 @@ class Receiver:
                 if self._server_thread.is_alive():
                     ok = False
                 self._server_thread = None
+
+            self._mtls_ctx = None
 
             for t in list(self._client_threads):
                 t.join(timeout=self._JOIN_TIMEOUT_S)
@@ -242,6 +278,16 @@ class Receiver:
                 client, _ = self._server.accept()
             except OSError:
                 break
+            if self._mtls_ctx is not None:
+                try:
+                    client = self._mtls_ctx.wrap_socket(client, server_side=True)
+                except ssl.SSLError as e:
+                    print(f"[MAVC-Receiver] mTLS handshake failed, closing client: {e}")
+                    try:
+                        client.close()
+                    except OSError:
+                        pass
+                    continue
             self._client_sockets.append(client)
             client_conn_thread = threading.Thread(
                 target=self._rec_loop,
