@@ -1,9 +1,9 @@
 from .wire.command import Command
-from .cfg_parser import ReceiverCfg, load_cfg, validate_receiver_mtls_cfg
 from .wire.command_parser import CommandParser
+from .cfg_parser import ReceiverCfg, load_cfg, validate_receiver_mtls_cfg
 
-import socket
 import ssl
+import socket
 import threading
 from pathlib import Path
 from queue import Queue, Empty
@@ -35,6 +35,8 @@ class Receiver:
     _client_threads: List[threading.Thread]
     _spin_callbacks: List[Callable]
     _instant_callbacks: List[Tuple[Callable, bool]]
+    _clients_lock: threading.Lock
+    _callbacks_lock: threading.Lock
 
     _started: bool
 
@@ -72,6 +74,8 @@ class Receiver:
         self._client_threads: List[threading.Thread] = []
         self._spin_callbacks: List[Callable] = []
         self._instant_callbacks: List[Tuple[Callable, bool]] = []
+        self._clients_lock = threading.Lock()
+        self._callbacks_lock = threading.Lock()
         self._command_parser = CommandParser()
         self._server = None
         self._server_thread = None
@@ -98,9 +102,7 @@ class Receiver:
             )
 
         if self._started:
-            _log_warn(
-                "[MAVC-Receiver] Server is already running; stop it before calling run() again."
-            )
+            _log_warn("[MAVC-Receiver] Server is already running; stop it before calling run() again.")
             return
         try:
             validate_receiver_mtls_cfg(self._cfg)
@@ -117,6 +119,7 @@ class Receiver:
                 self._mtls_ctx = None
 
             self._server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            self._server.settimeout(1.0)  # Necessary so `while _started` condition gets checked repeatedly
             self._server.bind((self._cfg.bind_host, self._cfg.bind_port))
             self._server.listen(self._cfg.max_connections)
             self._started = True
@@ -157,15 +160,27 @@ class Receiver:
         self._started = False
         ok = True
         try:
+            server_to_close: Optional[socket.socket] = self._server
             if self._server is not None:
                 try:
-                    self._server.close()
+                    server_to_close.close()
                 except OSError:
                     ok = False
-                finally:
-                    self._server = None
 
-            for client in list(self._client_sockets):
+            if self._server_thread is not None:
+                self._server_thread.join(timeout=self._JOIN_TIMEOUT_S)
+                if self._server_thread.is_alive():
+                    ok = False
+            self._server_thread = None
+            self._server = None
+
+            self._mtls_ctx = None
+
+            with self._clients_lock:
+                clients = list(self._client_sockets)
+                client_threads = list(self._client_threads)
+
+            for client in clients:
                 try:
                     client.shutdown(socket.SHUT_RDWR)
                 except OSError:
@@ -175,25 +190,18 @@ class Receiver:
                 except OSError:
                     ok = False
 
-            if self._server_thread is not None:
-                self._server_thread.join(timeout=self._JOIN_TIMEOUT_S)
-                if self._server_thread.is_alive():
-                    ok = False
-                self._server_thread = None
-
-            self._mtls_ctx = None
-
-            for t in list(self._client_threads):
+            for t in client_threads:
+                if t is threading.current_thread():
+                    continue
                 t.join(timeout=self._JOIN_TIMEOUT_S)
                 if t.is_alive():
                     ok = False
-            self._client_threads.clear()
-            self._client_sockets.clear()
+            with self._clients_lock:
+                self._client_threads.clear()
+                self._client_sockets.clear()
 
         except Exception as e:
-            _log_error(
-                f"[MAVC-Receiver] Error during stop (shutdown may be incomplete): {e}"
-            )
+            _log_error(f"[MAVC-Receiver] Error during stop (shutdown may be incomplete): {e}")
             return False
 
         return ok
@@ -207,13 +215,18 @@ class Receiver:
         Note: Callbacks run on the same thread that calls ``spin_once``.
 
         Returns:
-            True if callbacks were invoked, False if the queue was empty.
+            True if callbacks were invoked, False if the receiver is stopped or
+            the queue was empty.
         """
+        if not self._started:
+            return False
         try:
             command = self._queue.get_nowait()
         except Empty:
             return False
-        for callback in self._spin_callbacks:
+        with self._callbacks_lock:
+            spin_callbacks = list(self._spin_callbacks)
+        for callback in spin_callbacks:
             try:
                 callback(self, command)
             except Exception as e:
@@ -221,6 +234,8 @@ class Receiver:
         return True
 
     def poll(self) -> Command | None:
+        if not self._started:
+            return None
         try:
             return self._queue.get_nowait()
         except Empty:
@@ -246,15 +261,16 @@ class Receiver:
                 the command is not enqueued and thus spin_once and poll will not receive it.
         """
         try:
-            instant_ids = {fn for fn, _ in self._instant_callbacks}
-            if callback_fn in self._spin_callbacks or callback_fn in instant_ids:
-                raise ValueError(
-                    "The provided callback function is already registered and cannot be registered again."
-                )
-            if execute_on_spin:
-                self._spin_callbacks.append(callback_fn)
-            else:
-                self._instant_callbacks.append((callback_fn, digest))
+            with self._callbacks_lock:
+                instant_ids = {fn for fn, _ in self._instant_callbacks}
+                if callback_fn in self._spin_callbacks or callback_fn in instant_ids:
+                    raise ValueError(
+                        "The provided callback function is already registered and cannot be registered again."
+                    )
+                if execute_on_spin:
+                    self._spin_callbacks.append(callback_fn)
+                else:
+                    self._instant_callbacks.append((callback_fn, digest))
         except Exception as e:
             _log_error(f"[MAVC-Receiver] Error registering callback: {e}")
             return False
@@ -270,24 +286,24 @@ class Receiver:
             True if removed, False if an error occurred or the callback was unknown.
         """
         try:
-            if callback_fn in self._spin_callbacks:
-                self._spin_callbacks.remove(callback_fn)
-            else:
-                for i, (fn, _) in enumerate(self._instant_callbacks):
-                    if fn is callback_fn:
-                        del self._instant_callbacks[i]
-                        break
+            with self._callbacks_lock:
+                if callback_fn in self._spin_callbacks:
+                    self._spin_callbacks.remove(callback_fn)
                 else:
-                    raise ValueError(
-                        "The provided callback does not match any registered callback."
-                    )
+                    for i, (fn, _) in enumerate(self._instant_callbacks):
+                        if fn is callback_fn:
+                            del self._instant_callbacks[i]
+                            break
+                    else:
+                        raise ValueError("The provided callback does not match any registered callback.")
         except Exception as e:
             _log_error(f"[MAVC-Receiver] Error unregistering callback: {e}")
             return False
         return True
 
     def count_callbacks(self) -> int:
-        return len(self._instant_callbacks) + len(self._spin_callbacks)
+        with self._callbacks_lock:
+            return len(self._instant_callbacks) + len(self._spin_callbacks)
 
     # === Parsing ===
     def set_parser(self, parse_fn: Callable) -> None:
@@ -296,32 +312,39 @@ class Receiver:
     # === Private Methods ===
     def _server_conn_loop(self) -> None:
         """Do not call externally. Block on :meth:`socket.accept`, track each client, and start :meth:`_rec_loop` per connection."""
-        assert self._server is not None
-        while True:
+        while self._started:
             try:
-                client, _ = self._server.accept()
+                server = self._server
+                if server is None:
+                    break
+                client, _ = server.accept()
+                client.settimeout(1.0)
+            except socket.timeout:
+                continue
             except OSError:
                 break
             if self._mtls_ctx is not None:
                 try:
                     client = self._mtls_ctx.wrap_socket(client, server_side=True)
                 except ssl.SSLError as e:
-                    _log_error(
-                        f"[MAVC-Receiver] mTLS handshake failed, closing client: {e}"
-                    )
+                    _log_error(f"[MAVC-Receiver] mTLS handshake failed, closing client: {e}")
                     try:
                         client.close()
                     except OSError:
                         pass
                     continue
-            self._client_sockets.append(client)
+            with self._clients_lock:
+                self._client_sockets.append(client)
+                total_connections = len(self._client_sockets)
+            print(f"[MAVC-Receiver] Received new client connection. Total connections is {total_connections}")
             client_conn_thread = threading.Thread(
                 target=self._rec_loop,
                 args=(client,),
                 name="mavc-receiver-client",
                 daemon=False,
             )
-            self._client_threads.append(client_conn_thread)
+            with self._clients_lock:
+                self._client_threads.append(client_conn_thread)
             client_conn_thread.start()
 
     def _rec_loop(self, client: socket.socket) -> None:
@@ -337,7 +360,10 @@ class Receiver:
         buf = bytearray()
         try:
             while self._started:
-                data = client.recv(self._cfg.buffer_size)
+                try:
+                    data = client.recv(self._cfg.buffer_size)
+                except socket.timeout:
+                    continue
                 if not data:
                     break
                 buf.extend(data)
@@ -346,31 +372,35 @@ class Receiver:
                     try:
                         cmd = self._command_parser.decode(chunk)
                         skip_queue = False
-                        for instant_cb, digest in list(self._instant_callbacks):
+                        with self._callbacks_lock:
+                            instant_callbacks = list(self._instant_callbacks)
+                        for instant_cb, digest in instant_callbacks:
                             try:
                                 instant_cb(self, cmd)
                             except Exception as e:
-                                _log_error(
-                                    f"[MAVC-Receiver] Error in instant callback: {e}"
-                                )
+                                _log_error(f"[MAVC-Receiver] Error in instant callback: {e}")
                             if digest:
                                 skip_queue = True
                         if not skip_queue:
                             self._queue.put(cmd)
                     except ValueError as e:
                         del buf[0]
-                        _log_warn(
-                            f"[MAVC-Receiver] Decode error on chunk, dropped 1 byte and resyncing: {e}"
-                        )
+                        _log_warn(f"[MAVC-Receiver] Decode error on chunk, dropped 1 byte and resyncing: {e}")
                         continue
                     del buf[:frame_size]
         except Exception as e:
             _log_error(f"[MAVC-Receiver] Error while receiving byte stream: {e}")
-            pass
         finally:
             try:
                 client.close()
             except OSError:
                 pass
-            if client in self._client_sockets:
-                self._client_sockets.remove(client)
+            with self._clients_lock:
+                try:
+                    self._client_sockets.remove(client)
+                except ValueError:
+                    pass
+                try:
+                    self._client_threads.remove(threading.current_thread())
+                except ValueError:
+                    pass

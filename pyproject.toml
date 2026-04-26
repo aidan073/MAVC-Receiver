@@ -6,13 +6,6 @@ dependencies = [
   "cryptography >= 46.0.7",
   "PyYAML >= 6.0",
 ]
-
-[project.scripts]
-mavc-local-ca = "mavc_receiver.security.setup:main"
-
-[tool.setuptools.packages.find]
-where = ["src"]
-
 authors = [
   { name="Aidan Bell", email="aidanbell073@gmail.com" },
 ]
@@ -20,16 +13,22 @@ description = "A receiver that processes packets from the Mobile Arm Vision Cont
 readme = "README.md"
 requires-python = ">=3.11"
 classifiers = [
-    "Programming Language :: Python :: 3",
-    "Operating System :: OS Independent",
+  "Programming Language :: Python :: 3",
+  "Operating System :: OS Independent",
 ]
 license = "MIT"
 license-files = ["LICENSE"]
+
+[project.scripts]
+mavc-local-ca = "mavc_receiver.security.setup:main"
 
 [project.urls]
 MAVC-Sender = "https://github.com/aidan073/MAVC-Sender"
 MAVC-Example = "https://github.com/aidan073/MAVC-Example"
 Issues = "https://github.com/aidan073/MAVC-Receiver/issues"
+
+[tool.setuptools.packages.find]
+where = ["src"]
 
 [build-system]
 requires = ["setuptools", "wheel"]

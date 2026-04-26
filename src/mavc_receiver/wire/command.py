@@ -51,3 +51,18 @@ class Command:
     palm_orientation: tuple[float, float, float]  # Float32[3]
     grip_amount: float  # Float32
     checksum: Optional[int] = None  # UInt8
+
+    def __repr__(self) -> str:
+        checksum_s = "None" if self.checksum is None else f"0x{self.checksum:02X}"
+        return (
+            "Command(\n"
+            f"  magic=0x{self.magic:04X},\n"
+            f"  version={self.version},\n"
+            f"  sequence_id={self.sequence_id},\n"
+            f"  timestamp={self.timestamp!r},\n"
+            f"  palm_position={self.palm_position!r},\n"
+            f"  palm_orientation={self.palm_orientation!r},\n"
+            f"  grip_amount={self.grip_amount!r},\n"
+            f"  checksum={checksum_s},\n"
+            ")"
+        )
