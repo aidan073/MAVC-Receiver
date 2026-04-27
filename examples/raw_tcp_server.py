@@ -16,16 +16,14 @@ import signal
 
 
 def main() -> None:
-    cfg = ReceiverCfg()
+    cfg = ReceiverCfg(bind_port=9000)
     rx = Receiver(cfg)
 
     def on_command(_receiver: Receiver, cmd: Command) -> None:
-        print(f"[example] {cmd!r}")
+        print(f"[MAVC-Example] {cmd!r}")
 
     rx.register_callback(on_command, execute_on_spin=True)
     rx.run()
-    if not rx.is_safe:
-        raise ValueError("Receiver is in unsafe state due to cfg issue. Check console for logs.")
 
     print(f"Listening on {rx._cfg.bind_host}:{rx._cfg.bind_port} (plain TCP, no TLS). " "Ctrl+C to stop.")
 

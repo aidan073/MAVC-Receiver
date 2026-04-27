@@ -3,7 +3,7 @@ name = "mavc_receiver"
 version = "0.0.1"
 dependencies = [
   "colorama >= 0.4.6",
-  "cryptography >= 46.0.7",
+  "cryptography == 44.0.0",
   "PyYAML >= 6.0",
 ]
 authors = [
